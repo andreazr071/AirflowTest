@@ -1,0 +1,5 @@
+# Para correr las pruebas fuera de Docker: pip install -r requirements-dev.txt
+-r requirements.txt
+pytest
+psycopg2-binary
+apache-airflow[postgres]==2.11.2   # instalar con el constraints de Airflow (ver README, sección Pruebas)

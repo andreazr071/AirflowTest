@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" role="img" aria-label="DataMart">
+  <rect width="240" height="240" rx="56" fill="#D9D9D9" opacity=".35"/>
+  <g transform="translate(20 8)">
+    <rect x="34" y="84" width="152" height="152" rx="40" fill="#D96685"/>
+    <rect x="22" y="72" width="152" height="152" rx="40" fill="#D9487D"/>
+    <path d="M68 98 V86 C68 42 128 42 128 86 V98" fill="none" stroke="#731652" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="54"  y="160" width="22" height="36" rx="11" fill="#D9D9D9"/>
+    <rect x="86"  y="142" width="22" height="54" rx="11" fill="#D9A679"/>
+    <rect x="118" y="124" width="22" height="72" rx="11" fill="#731652"/>
+  </g>
+</svg>

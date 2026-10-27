@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 260" role="img" aria-labelledby="t d">
+  <title id="t">DataMart S.A.S.</title>
+  <desc id="d">Bolsa de compras de esquinas suaves con tres barras ascendentes, símbolo de comercio electrónico y datos</desc>
+  <!-- Icono: bolsa + barras de datos -->
+  <g transform="translate(20 14)">
+    <rect x="34" y="84" width="152" height="152" rx="40" fill="#D96685"/>
+    <rect x="22" y="72" width="152" height="152" rx="40" fill="#D9487D"/>
+    <path d="M68 98 V86 C68 42 128 42 128 86 V98" fill="none" stroke="#731652" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="54"  y="160" width="22" height="36" rx="11" fill="#D9D9D9"/>
+    <rect x="86"  y="142" width="22" height="54" rx="11" fill="#D9A679"/>
+    <rect x="118" y="124" width="22" height="72" rx="11" fill="#731652"/>
+  </g>
+  <!-- Nombre -->
+  <g font-family="Nunito, Poppins, 'Segoe UI', Arial, Helvetica, sans-serif">
+    <text x="236" y="146" font-size="84" font-weight="800" letter-spacing="-1"><tspan fill="#731652">Data</tspan><tspan fill="#D9487D">Mart</tspan></text>
+    <rect x="240" y="172" width="64" height="8" rx="4" fill="#D9A679"/>
+    <text x="318" y="182" font-size="26" font-weight="600" letter-spacing="6" fill="#731652" opacity=".85">S.A.S.</text>
+  </g>
+</svg>

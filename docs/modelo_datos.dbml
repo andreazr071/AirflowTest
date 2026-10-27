@@ -1,0 +1,91 @@
+// Pega este contenido en https://dbdiagram.io/d para ver el diagrama
+Table dim_country { country_id int [pk] country_name text [unique] }
+Table dim_customer { customer_id bigint [pk] first_seen_utc timestamptz last_seen_utc timestamptz }
+Table dim_product {
+  product_code text [pk, note: 'MAYUSCULAS sin espacios']
+  product_name text [note: 'nombre canonico']
+  code_pattern text [note: 'CATALOGO | ALTERNO | NO_PRODUCTO']
+  is_merchandise boolean
+  category text
+  category_source text
+  n_description_variants_raw int
+  n_description_variants_norm int
+  has_inconsistent_description boolean
+}
+Table product_description_variant {
+  product_code text [pk]
+  description_norm text [pk]
+  occurrences int
+  sale_occurrences int
+  is_canonical boolean
+}
+Table fact_sales {
+  sale_id bigint [pk]
+  source_system text
+  source_row_number int
+  invoice_no text
+  product_code text
+  customer_id bigint [note: 'NULL = anonimo']
+  country_id int
+  invoice_ts_utc timestamptz
+  invoice_date date [note: 'generada, UTC']
+  quantity int [note: '> 0']
+  unit_price numeric [note: '> 0']
+  gross_revenue numeric [note: 'generada: quantity * unit_price']
+  is_anonymous boolean
+}
+Table fact_returns {
+  return_id bigint [pk]
+  source_system text
+  source_row_number int
+  invoice_no text
+  movement_type text [note: 'DEVOLUCION | AJUSTE']
+  product_code text
+  customer_id bigint
+  country_id int
+  invoice_ts_utc timestamptz
+  invoice_date date
+  quantity_returned int
+  unit_price numeric [note: '>= 0']
+  returned_amount numeric [note: 'generada']
+  is_anonymous boolean
+}
+Table agg_daily_product_net {
+  invoice_date date [pk]
+  product_code text [pk]
+  units_sold bigint
+  units_returned bigint
+  gross_revenue numeric
+  returned_amount numeric
+  net_revenue numeric [note: 'bruto - devoluciones del mismo producto y dia']
+}
+Table rejected_records {
+  reject_id bigint [pk]
+  source_system text
+  source_row_number int
+  reject_reason text
+  invoice_no text
+  stock_code text
+  description text
+  quantity text
+  invoice_date text
+  unit_price text
+  customer_id text
+  country text
+  loaded_at timestamptz
+}
+Table etl_run_audit {
+  logical_date date [pk]
+  source_system text [pk]
+  metric text [pk]
+  value numeric
+  updated_at timestamptz
+}
+Ref: fact_sales.product_code > dim_product.product_code
+Ref: fact_sales.customer_id > dim_customer.customer_id
+Ref: fact_sales.country_id > dim_country.country_id
+Ref: fact_returns.product_code > dim_product.product_code
+Ref: fact_returns.customer_id > dim_customer.customer_id
+Ref: fact_returns.country_id > dim_country.country_id
+Ref: agg_daily_product_net.product_code > dim_product.product_code
+Ref: product_description_variant.product_code > dim_product.product_code

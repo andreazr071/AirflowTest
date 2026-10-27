@@ -1,0 +1,164 @@
+# Entorno completo con un solo comando:   docker-compose up      (o: docker compose up)
+# Requisitos previos: copiar .env.example a .env y dejar los CSV en RAW_DATA_DIR (ver README).
+#
+# Servicios
+#   airflow-metadata-db  PostgreSQL SOLO para metadatos de Airflow
+#   products-api         API REST de productos (FastAPI) en http://localhost:8000/docs
+#   warehouse-db         PostgreSQL del repositorio analítico (tablas creadas al iniciar por sql/ddl)
+#   airflow-init         migra la BD, crea el admin, la Connection y las Variables, y termina
+#   airflow-webserver    UI en http://localhost:${AIRFLOW_WEBSERVER_PORT:-8080}
+#   airflow-scheduler    detecta y ejecuta los DAGs (LocalExecutor)
+#
+# Patrón basado en el docker-compose oficial de Airflow 2.11.2:
+# https://airflow.apache.org/docs/apache-airflow/2.11.2/howto/docker-compose/index.html
+name: datamart-etl
+
+x-airflow-common: &airflow-common
+  build:
+    context: .
+    dockerfile: Dockerfile
+  image: datamart-airflow:2.11.2
+  user: "${AIRFLOW_UID:-50000}:0"
+  environment: &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_DB_USER:?falta AIRFLOW_DB_USER en .env}:${AIRFLOW_DB_PASSWORD:?falta AIRFLOW_DB_PASSWORD en .env}@airflow-metadata-db:5432/${AIRFLOW_DB_NAME:?falta AIRFLOW_DB_NAME en .env}
+    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:?falta AIRFLOW_FERNET_KEY en .env}
+    AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_WEBSERVER_SECRET_KEY:?falta AIRFLOW_WEBSERVER_SECRET_KEY en .env}
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"  # el DAG corre solo al levantar el entorno
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__TEST_CONNECTION: Enabled              # permite `airflow connections test`
+    AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: "true"
+    PYTHONPATH: /opt/airflow/include                     # paquete datamart_etl
+    # Datos del warehouse y parámetros: los lee scripts/init_airflow.sh
+    WAREHOUSE_DB_HOST: warehouse-db
+    WAREHOUSE_DB_PORT: "5432"
+    WAREHOUSE_DB_NAME: ${WAREHOUSE_DB_NAME:?falta WAREHOUSE_DB_NAME en .env}
+    WAREHOUSE_DB_USER: ${WAREHOUSE_DB_USER:?falta WAREHOUSE_DB_USER en .env}
+    WAREHOUSE_DB_PASSWORD: ${WAREHOUSE_DB_PASSWORD:?falta WAREHOUSE_DB_PASSWORD en .env}
+    DATAMART_SALES_FILE: ${DATAMART_SALES_FILE:-data.csv}
+    DATAMART_HISTORY_FILE: ${DATAMART_HISTORY_FILE:-}
+    DATAMART_SOURCE_TIMEZONE: ${DATAMART_SOURCE_TIMEZONE:-Europe/London}
+    DATAMART_MAX_REJECT_RATIO: ${DATAMART_MAX_REJECT_RATIO:-0.05}
+    DATAMART_PRODUCTS_API_URL: ${DATAMART_PRODUCTS_API_URL-http://products-api:8000}
+  volumes:
+    - ./dags:/opt/airflow/dags:ro
+    - ./include:/opt/airflow/include:ro
+    - ./sql:/opt/airflow/sql:ro
+    - ./scripts:/opt/airflow/scripts:ro
+    - ./logs:/opt/airflow/logs
+    - ./data/work:/opt/airflow/data/work                          # intermedios Parquet entre tareas
+    - ${RAW_DATA_DIR:-./data/raw}:/opt/airflow/data/raw:ro        # CSV de origen (solo lectura)
+  depends_on: &airflow-common-depends-on
+    airflow-metadata-db:
+      condition: service_healthy
+    warehouse-db:
+      condition: service_healthy
+
+services:
+  products-api:
+    build:
+      context: ./api
+    image: datamart-products-api:1.0
+    ports:
+      - "${PRODUCTS_API_PORT:-8000}:8000"   # docs interactivas: http://localhost:8000/docs
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  airflow-metadata-db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${AIRFLOW_DB_USER:?falta AIRFLOW_DB_USER en .env}
+      POSTGRES_PASSWORD: ${AIRFLOW_DB_PASSWORD:?falta AIRFLOW_DB_PASSWORD en .env}
+      POSTGRES_DB: ${AIRFLOW_DB_NAME:?falta AIRFLOW_DB_NAME en .env}
+    volumes:
+      - airflow-metadata-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  warehouse-db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${WAREHOUSE_DB_USER:?falta WAREHOUSE_DB_USER en .env}
+      POSTGRES_PASSWORD: ${WAREHOUSE_DB_PASSWORD:?falta WAREHOUSE_DB_PASSWORD en .env}
+      POSTGRES_DB: ${WAREHOUSE_DB_NAME:?falta WAREHOUSE_DB_NAME en .env}
+    volumes:
+      - warehouse-data:/var/lib/postgresql/data
+      # Los .sql de esta carpeta se ejecutan al crear la BD por primera vez -> tablas listas al iniciar
+      - ./sql/ddl:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "${WAREHOUSE_HOST_PORT:-5433}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  airflow-init:
+    <<: *airflow-common
+    entrypoint: /bin/bash
+    user: "0:0"  # root solo aquí, para dejar logs/ y data/work con el dueño correcto
+    command:
+      - -c
+      - |
+        set -e
+        mkdir -p /opt/airflow/logs /opt/airflow/data/work
+        chown -R "$${AIRFLOW_UID:-50000}:0" /opt/airflow/logs /opt/airflow/data/work
+        # El entrypoint de la imagen migra la BD y crea el admin gracias a las variables _AIRFLOW_*
+        /entrypoint airflow version
+        bash /opt/airflow/scripts/init_airflow.sh
+    environment:
+      <<: *airflow-common-env
+      AIRFLOW_UID: ${AIRFLOW_UID:-50000}
+      _AIRFLOW_DB_MIGRATE: "true"
+      _AIRFLOW_WWW_USER_CREATE: "true"
+      _AIRFLOW_WWW_USER_USERNAME: ${AIRFLOW_ADMIN_USER:?falta AIRFLOW_ADMIN_USER en .env}
+      _AIRFLOW_WWW_USER_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:?falta AIRFLOW_ADMIN_PASSWORD en .env}
+    depends_on:
+      <<: *airflow-common-depends-on
+
+  airflow-webserver:
+    <<: *airflow-common
+    command: webserver
+    ports:
+      - "${AIRFLOW_WEBSERVER_PORT:-8080}:8080"   # puerto del HOST; dentro del contenedor siempre es 8080
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8974/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    depends_on:
+      <<: *airflow-common-depends-on
+      products-api:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+
+volumes:
+  airflow-metadata-data:
+  warehouse-data:

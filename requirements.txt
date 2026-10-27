@@ -1,0 +1,3 @@
+# Dependencias del ETL (las versiones exactas las fija el archivo de constraints de Airflow 2.11.2)
+pandas
+pyarrow

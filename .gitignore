@@ -1,0 +1,17 @@
+# Secretos
+.env
+
+# Datos pesados: los CSV completos de Kaggle se copian a data/raw (ver README). Los seeds sí se versionan.
+data/raw/*
+!data/raw/.gitkeep
+data/work/*
+!data/work/.gitkeep
+
+# Artefactos de ejecución
+logs/
+*.parquet
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
